@@ -21,6 +21,8 @@ def saveToCSV(savedict, filename = "", path = ""):
             filename = "".join([filename,str(datanum)])
         if filename[-4:] != ".csv":
             filename = "".join([filename,".csv"])
+        if not path:
+            path = os.getcwd()
         if not os.path.isdir(path):
             os.makedirs(path)
         if not os.path.isfile("".join([path,filename])):
@@ -58,15 +60,23 @@ def splitIntoDicts(data, relKey="Lackh (m)"):
     return dicts
 
 
-def parseSubDirs(filtlistlist, dirname=""):
+def parseSubDirs(filtlistlist, dirname="", dirstruct=[]):
     """
     :param filtlistlist: list of lists of strings
     :param dirname: dir to start parsing from added to cwd
-    :return: list of all files containing at least one of the string of all the lists in filtlistlist
+    :param dirstruct use predefined dirstruct to avoid calling os.walk all the time
+    :return: list of all files containing at least one of the strings of all the lists in filtlistlist
     """
-    path = os.getcwd() + "//" + dirname
+    if not dirname:
+        path = os.getcwd()
+    else:
+        path = dirname
     files = []
-    for r, d, f in os.walk(path):
+    if len(dirstruct) > 0:
+        dirs = dirstruct
+    else:
+        dirs = list(os.walk(path))
+    for r, d, f in dirs:
         for file in f:
             for filtlist in filtlistlist:
                 if not np.any([filt in os.path.join(r, file) for filt in filtlist]):
@@ -102,19 +112,21 @@ def splitData(data, relKey = "Frequenz [Hz]"):
     :return:
         data separated into sweeps
     """
-    print(data.keys())
     if relKey in data:
         relKey = relKey
     elif "frequenz (Hz)" in data:
         relKey = "frequenz (Hz)"
     elif 'Frequenz [Hz]' in data:
         relKey = 'Frequenz [Hz]'
+    elif ' Frequenz [Hz]' in data:
+        relKey = ' Frequenz [Hz]'
     newdict = OrderedDict()
     sweepAm = 0
-    if len(set(data[relKey])) == len(data[relKey]):
-        for key in data:
-            newdict[key] = [data[key]]
-        return newdict
+    # if len(set(data[relKey])) % len(data[relKey]):
+    #     print("shortcut")
+    #     for key in data:
+    #         newdict[key] = [data[key][x*len(set(data[relKey])):len(set(data[relKey]))*(1+x)] for x in range(int(len(data[relKey])/len(set(data[relKey]))))]
+    #     return newdict
     cor = -(data[relKey][0]-data[relKey][1])/np.abs(data[relKey][0]-data[relKey][1])
     for point, el in enumerate(data[relKey]):
         if (point > 0 and (el*cor) < (data[relKey][point-1])*cor) or (point == len(data[relKey])-cor):
@@ -138,11 +150,23 @@ def savePickle(savedict, filename = "", path =""):
     with open("".join([path,filename]), 'wb+') as rawF:
         pickle.dump(savedict, rawF, pickle.HIGHEST_PROTOCOL)
 
+def transDataML(dataDict, xKey, compFunc=lambda a: a):
+    X = []
+    y = []
+    for campNumb, campaign in enumerate(dataDict):
+        for fileCount, messfile in enumerate(dataDict[campaign]):
+            for data in dataDict[campaign][messfile]["data"][xKey]:
+                X.append(data)
+                y.append(dataDict[campaign][messfile]["metadata"]["Chip:"] + " " + dataDict[campaign][messfile]["metadata"]["Substanz:"])
+    return X, y
+
 
 def winAvg(data, winWidth=0, winfunc=np.blackman, mode="same"):
     if not winWidth:
-        if int(len(data)*(5/100)) > 0:
+        if int(len(data)*(5/100))>0:
             winWidth = int(len(data)*(10/100))
+            if not winWidth % 2:
+                winWidth += 1
         else: return data
     kernel = winfunc(winWidth)/np.sum(winfunc(winWidth))
     data = np.convolve(data, kernel, mode=mode)
@@ -162,7 +186,6 @@ def zipRaw(path = os.getcwd(), mark="_raw", outname = "raw.zip"):
     zf.close()
     return 1
 
-
 def readData(filename, path=""):
     """
     :param filename: trivial
@@ -173,7 +196,7 @@ def readData(filename, path=""):
     metadata = dict()
     with open("".join([path, filename]),'r') as file:
         lines = [[part for part in line.rstrip('\n').split(";") if part] for line in file]
-        for count,line in enumerate(lines):
+        for count, line in enumerate(lines):
             if len(line) > 3:
                 keyline = line
                 keypoint = count
@@ -188,9 +211,11 @@ def readData(filename, path=""):
                     try:
                         data[keyline[pos]].append(float(line[pos]))
                     except: pass
-
     metadata["dataKeys"] = data.keys()
     return data, metadata
+
+
+
 
 
 if __name__ == "__main__":
